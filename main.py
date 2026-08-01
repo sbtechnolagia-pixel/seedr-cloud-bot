@@ -85,6 +85,20 @@ def delete_seedr_file(file_id):
         print(f"⚠️ Error deleting file {file_id}: {e}")
     return False
 
+def delete_seedr_folder(folder_id):
+    url = f"{SEEDR_BASE_URL}/api/v0.1/fs/batch/delete"
+    delete_payload = {
+        "delete_arr": json.dumps([{"type": "folder", "id": folder_id}])
+    }
+    try:
+        res = session.post(url, data=delete_payload, timeout=15)
+        if res.status_code == 200:
+            print(f"🗑️ [Cloud Bot] Deleted folder ID {folder_id} from Seedr. Space Freed!")
+            return True
+    except Exception as e:
+        print(f"⚠️ Error deleting folder {folder_id}: {e}")
+    return False
+
 def upload_to_gdrive_webhook(file_url, filename):
     """Triggers Google Apps Script Webhook to save file straight into Google Drive"""
     if not GDRIVE_WEBHOOK_URL:
@@ -127,7 +141,10 @@ def process_folder(folder_id=0):
             delete_seedr_file(file_id)
 
     for subfolder in folders:
-        process_folder(subfolder.get("id"))
+        sub_id = subfolder.get("id")
+        process_folder(sub_id)
+        if folder_id == 0 and sub_id:
+            delete_seedr_folder(sub_id)
 
 def worker_loop():
     print("🚀 [Cloud Bot] Background Worker Started!")
