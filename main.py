@@ -11,12 +11,11 @@ from flask import Flask
 # -------------------------------------------------------------
 SEEDR_EMAIL = os.environ.get("SEEDR_EMAIL", "sbt.console@gmail.com")
 SEEDR_PASS = os.environ.get("SEEDR_PASS", "Admin@123")
+GDRIVE_WEBHOOK_URL = os.environ.get("GDRIVE_WEBHOOK_URL", "")
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "15"))
 
 SEEDR_BASE_URL = "https://www.seedr.cc"
-GDRIVE_FOLDER_NAME = "Seedr_Downloads"
 
-# Flask Web Server for Render Health Check (Keeps Render Free Tier Active 24/7)
 app = Flask(__name__)
 
 @app.route('/')
@@ -86,6 +85,25 @@ def delete_seedr_file(file_id):
         print(f"⚠️ Error deleting file {file_id}: {e}")
     return False
 
+def upload_to_gdrive_webhook(file_url, filename):
+    """Triggers Google Apps Script Webhook to save file straight into Google Drive"""
+    if not GDRIVE_WEBHOOK_URL:
+        print("ℹ️ [Cloud Bot] GDRIVE_WEBHOOK_URL not set yet. Skipping Google Drive upload.")
+        return False
+    
+    print(f"☁️ [Cloud Bot] Transferring {filename} to Google Drive...")
+    try:
+        payload = {"url": file_url, "name": filename}
+        res = requests.post(GDRIVE_WEBHOOK_URL, json=payload, timeout=45)
+        if res.status_code in [200, 302]:
+            print(f"✅ [Cloud Bot] Successfully saved {filename} to Google Drive!")
+            return True
+        else:
+            print(f"⚠️ Google Drive status: {res.status_code}")
+    except Exception as e:
+        print(f"⚠️ Error transferring to Google Drive: {e}")
+    return False
+
 def process_folder(folder_id=0):
     items = get_seedr_items(folder_id)
     if not items:
@@ -104,6 +122,7 @@ def process_folder(folder_id=0):
 
         if dl_url:
             print(f"🔗 Direct Download URL Ready: {dl_url}")
+            upload_to_gdrive_webhook(dl_url, filename)
             print("🧹 Auto-cleaning Seedr storage...")
             delete_seedr_file(file_id)
 
