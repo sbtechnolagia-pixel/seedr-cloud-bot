@@ -99,23 +99,84 @@ def delete_seedr_folder(folder_id):
         print(f"⚠️ Error deleting folder {folder_id}: {e}")
     return False
 
+processed_file_ids = set()
+
+def stream_upload_resumable(dl_url, filename, upload_url):
+    """Streams file chunk-by-chunk from Seedr directly to Google Drive Resumable Upload URL (No 50MB Limit!)"""
+    try:
+        head = session.head(dl_url, allow_redirects=True, timeout=15)
+        total_size = int(head.headers.get("Content-Length", 0))
+        
+        print(f"🚀 [Cloud Bot] Starting Resumable Stream Upload for {filename} ({total_size / (1024*1024):.1f} MB)...")
+        
+        chunk_size = 8 * 1024 * 1024  # 8 MB chunks
+        
+        with session.get(dl_url, stream=True, timeout=30) as r:
+            r.raise_for_status()
+            offset = 0
+            
+            for chunk in r.iter_content(chunk_size=chunk_size):
+                if not chunk:
+                    continue
+                
+                chunk_len = len(chunk)
+                start = offset
+                end = offset + chunk_len - 1
+                
+                headers = {
+                    "Content-Length": str(chunk_len),
+                    "Content-Range": f"bytes {start}-{end}/{total_size if total_size > 0 else '*'}"
+                }
+                
+                put_res = requests.put(upload_url, data=chunk, headers=headers, timeout=120)
+                offset += chunk_len
+                
+                if total_size > 0:
+                    pct = int((offset / total_size) * 100)
+                    print(f"  ⬆️ Uploaded {offset / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB ({pct}%)")
+                else:
+                    print(f"  ⬆️ Uploaded {offset / (1024*1024):.1f} MB...")
+                
+                if put_res.status_code in [200, 201]:
+                    print(f"✅ [Cloud Bot] 100% Upload Completed for {filename}!")
+                    return True
+                elif put_res.status_code != 308:
+                    print(f"⚠️ Unexpected status chunk PUT: {put_res.status_code} - {put_res.text}")
+            
+            print(f"✅ [Cloud Bot] Resumable Upload finished for {filename}!")
+            return True
+    except Exception as e:
+        print(f"❌ [Cloud Bot] Stream upload exception: {e}")
+    return False
+
 def upload_to_gdrive_webhook(file_url, filename):
-    """Triggers Google Apps Script Webhook to save file straight into Google Drive"""
+    """Triggers Google Apps Script Webhook for Resumable Stream Upload or Direct Fallback"""
     if not GDRIVE_WEBHOOK_URL:
         print("ℹ️ [Cloud Bot] GDRIVE_WEBHOOK_URL not set yet. Skipping Google Drive upload.")
         return False
     
-    print(f"☁️ [Cloud Bot] Transferring {filename} to Google Drive...")
+    print(f"☁️ [Cloud Bot] Requesting Google Drive Resumable Upload for {filename}...")
+    try:
+        req_payload = {"action": "create_upload_url", "name": filename}
+        res = requests.post(GDRIVE_WEBHOOK_URL, json=req_payload, timeout=30)
+        
+        if res.status_code == 200:
+            data = res.json()
+            upload_url = data.get("upload_url")
+            if upload_url:
+                return stream_upload_resumable(file_url, filename, upload_url)
+    except Exception as e:
+        print(f"⚠️ Resumable URL request failed: {e}. Falling back to direct POST...")
+    
+    # Fallback to direct POST
     try:
         payload = {"url": file_url, "name": filename}
-        res = requests.post(GDRIVE_WEBHOOK_URL, json=payload, timeout=45)
+        res = requests.post(GDRIVE_WEBHOOK_URL, json=payload, timeout=60)
         if res.status_code in [200, 302]:
             print(f"✅ [Cloud Bot] Successfully saved {filename} to Google Drive!")
             return True
-        else:
-            print(f"⚠️ Google Drive status: {res.status_code}")
     except Exception as e:
-        print(f"⚠️ Error transferring to Google Drive: {e}")
+        print(f"⚠️ Error in fallback upload: {e}")
     return False
 
 def process_folder(folder_id=0):
@@ -131,14 +192,19 @@ def process_folder(folder_id=0):
         filename = f.get("name")
         size = f.get("size", 0)
 
+        if file_id in processed_file_ids:
+            continue
+
         print(f"\n⚡ [Cloud Bot] Completed File Found: {filename} ({size / (1024*1024):.1f} MB)")
         dl_url = get_file_download_url(file_id)
 
         if dl_url:
             print(f"🔗 Direct Download URL Ready: {dl_url}")
-            upload_to_gdrive_webhook(dl_url, filename)
-            print("🧹 Auto-cleaning Seedr storage...")
-            delete_seedr_file(file_id)
+            success = upload_to_gdrive_webhook(dl_url, filename)
+            if success:
+                processed_file_ids.add(file_id)
+                print("🧹 Auto-cleaning Seedr storage...")
+                delete_seedr_file(file_id)
 
     for subfolder in folders:
         sub_id = subfolder.get("id")
