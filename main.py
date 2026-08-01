@@ -11,7 +11,7 @@ from flask import Flask
 # -------------------------------------------------------------
 SEEDR_EMAIL = os.environ.get("SEEDR_EMAIL", "sbt.console@gmail.com")
 SEEDR_PASS = os.environ.get("SEEDR_PASS", "Admin@123")
-GDRIVE_WEBHOOK_URL = os.environ.get("GDRIVE_WEBHOOK_URL", "https://script.google.com/macros/s/AKfycbwsRcB6P01RbkC5tjgb_IeCCAv0_xuoRbE8MkJWsqPKKKrnISMgaxxwL_nL_wwde3yI/exec")
+GDRIVE_WEBHOOK_URL = os.environ.get("GDRIVE_WEBHOOK_URL", "https://script.google.com/macros/s/AKfycbzSHqtAKu1CaNZxKaE4GWvgZRbLJTXCBU83S4KXNlrlNQp498PL2OuimHEJaueZzMAj/exec")
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "15"))
 
 SEEDR_BASE_URL = "https://www.seedr.cc"
